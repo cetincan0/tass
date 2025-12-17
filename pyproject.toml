@@ -1,0 +1,41 @@
+[project]
+name = "tass"
+version = "0.1.0"
+description = "A terminal assistant that allows you to ask an LLM to run commands."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "Can Cetin"}]
+
+dependencies = [
+    "requests>=2.32.5",
+    "rich>=14.2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/"]
+
+[project.urls]
+Homepage = "https://github.com/cetincan0/tass"
+
+[project.scripts]
+tass = "src.cli:main"
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.9",
+    "pytest>=9.0.2",
+]
+
+[tool.pyright]
+pythonVersion = "3.10"
+include = ["src/**/*.py"]
+venvPath = "."
+venv = ".venv"
