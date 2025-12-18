@@ -42,9 +42,10 @@ class TassApp:
         )
 
         data = response.json()
-        if "tool_calls" in data["choices"][0]["message"]:
-            tool_name = data["choices"][0]["message"]["tool_calls"][0]["function"]["name"]
-            tool_args_str = data["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+        message = data["choices"][0]["message"]
+        if message.get("tool_calls"):
+            tool_name = message["tool_calls"][0]["function"]["name"]
+            tool_args_str = message["tool_calls"][0]["function"]["arguments"]
             self.messages.append(
                 {
                     "role": "assistant",
@@ -73,7 +74,7 @@ class TassApp:
         return data["choices"][0]["message"]["content"]
 
     def read_file(self, path: str, start: int = 1) -> str:
-        console.print(f" └ Reading file [bold]{path}[/] (start={start})...")
+        console.print(f" └ Reading file [bold]{path}[/]...")
 
         lines = []
         with open(path) as f:
