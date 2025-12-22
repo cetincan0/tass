@@ -29,6 +29,56 @@ class TassApp:
             "read_file": self.read_file,
         }
 
+    def _check_llm_host(self):
+        test_url = f"{self.host}/v1/models"
+        try:
+            response = requests.get(test_url, timeout=2)
+            console.print(f"Terminal Assistant [green](LLM connection ✓)[/green]")
+            if response.status_code == 200:
+                return
+        except Exception:
+            console.print(f"Terminal Assistant [red](LLM connection ✗)[/red]")
+
+        console.print("\n[red]Could not connect to LLM[/red]")
+        console.print(f"If your LLM isn't running on {self.host}, you can set the [bold]TASS_HOST[/] environment variable to a different URL.")
+        new_host = console.input(
+            "Enter a different URL for this session (or press Enter to keep current): "
+        ).strip()
+
+        if new_host:
+            self.host = new_host
+
+        try:
+            response = requests.get(f"{self.host}/v1/models", timeout=2)
+            if response.status_code == 200:
+                console.print(f"[green]Connection established to {self.host}[/green]")
+                return
+        except Exception:
+            console.print(f"[red]Unable to verify new host {self.host}. Continuing with it anyway.[/red]")
+
+    def summarize(self):
+        max_messages = 10
+        if len(self.messages) <= max_messages:
+            return
+
+        prompt = (
+            "The conversation is becoming long and might soon go beyond the "
+            "context limit. Please provide a concise summary of the conversation, "
+            "preserving all important details. Keep the summary short enough "
+            "to fit within a few paragraphs at the most."
+        )
+
+        response = requests.post(
+            f"{self.host}/v1/chat/completions",
+            json={
+                "messages": self.messages + [{"role": "user", "content": prompt}],
+                "chat_template_kwargs": {"reasoning_effort": "medium"},
+            },
+        )
+        data = response.json()
+        summary = data["choices"][0]["message"]["content"]
+        self.messages = [self.messages[0], {"role": "assistant", "content": f"Summary of the conversation so far:\n{summary}"}]
+
     def call_llm(self) -> str | None:
         response = requests.post(
             f"{self.host}/v1/chat/completions",
@@ -43,35 +93,36 @@ class TassApp:
 
         data = response.json()
         message = data["choices"][0]["message"]
-        if message.get("tool_calls"):
-            tool_name = message["tool_calls"][0]["function"]["name"]
-            tool_args_str = message["tool_calls"][0]["function"]["arguments"]
-            self.messages.append(
-                {
-                    "role": "assistant",
-                    "tool_calls": [
-                        {
-                            "index": 0,
-                            "id": "id1",
-                            "type": "function",
-                            "function": {
-                                "name": tool_name,
-                                "arguments": tool_args_str
-                            }
-                        }
-                    ]
-                }
-            )
-            try:
-                tool = self.TOOLS_MAP[tool_name]
-                tool_args = json.loads(tool_args_str)
-                result = tool(**tool_args)
-                self.messages.append({"role": "tool", "content": result})
-            except Exception as e:
-                self.messages.append({"role": "user", "content": str(e)})
-                return self.call_llm()
+        if not message.get("tool_calls"):
+            return message["content"]
 
-        return data["choices"][0]["message"]["content"]
+        tool_name = message["tool_calls"][0]["function"]["name"]
+        tool_args_str = message["tool_calls"][0]["function"]["arguments"]
+        self.messages.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "id1",
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": tool_args_str
+                        }
+                    }
+                ]
+            }
+        )
+        try:
+            tool = self.TOOLS_MAP[tool_name]
+            tool_args = json.loads(tool_args_str)
+            result = tool(**tool_args)
+            self.messages.append({"role": "tool", "content": result})
+            return None
+        except Exception as e:
+            self.messages.append({"role": "user", "content": str(e)})
+            return self.call_llm()
 
     def read_file(self, path: str, start: int = 1) -> str:
         console.print(f" └ Reading file [bold]{path}[/]...")
@@ -88,6 +139,7 @@ class TassApp:
                 line_num += 1
 
                 if len(lines) >= 1000:
+                    lines.append("... (truncated)")
                     break
 
         console.print("   [green]Command succeeded[/green]")
@@ -161,7 +213,11 @@ class TassApp:
         return f"Command output (exit {result.returncode}):\n{out}\n{err}"
 
     def run(self):
-        console.print("Terminal Assistant")
+        try:
+            self._check_llm_host()
+        except KeyboardInterrupt:
+            console.print("\nBye!")
+            return
 
         while True:
             try:
@@ -180,8 +236,15 @@ class TassApp:
             self.messages.append({"role": "user", "content": user_input})
 
             while True:
-                llm_resp = self.call_llm()
+                try:
+                    llm_resp = self.call_llm()
+                except Exception as e:
+                    console.print(f"Failed to call LLM: {str(e)}")
+                    break
+
                 if llm_resp is not None:
                     console.print("")
                     console.print(Markdown(llm_resp))
+                    self.messages.append({"role": "assistant", "content": llm_resp})
+                    self.summarize()
                     break

@@ -3,11 +3,15 @@ from pathlib import Path
 _apply_patch_path = Path(__file__).resolve().parent / "third_party" / "apply_patch.md"
 APPLY_PATCH_PROMPT = _apply_patch_path.read_text().strip()
 
+_cwd_path = Path.cwd().resolve()
+
 SYSTEM_PROMPT = f"""You are Terminal-Assistant, a helpful AI that executes shell commands based on natural-language requests.
 
 If the user's request involves making changes to the filesystem such as creating or deleting files or directories, you MUST first check whether the file or directory exists before proceeding.
 
 If a user asks for an answer or explanation to something instead of requesting to run a command, answer briefly and concisely. Do not supply extra information, suggestions, tips, or anything of the sort.
+
+Current working directory: {_cwd_path}
 
 {APPLY_PATCH_PROMPT}"""
 
@@ -26,7 +30,7 @@ TOOLS = [
                     },
                     "explanation": {
                         "type": "string",
-                        "description": "A brief explanation of why you want to run this command.",
+                        "description": "A brief explanation of why you want to run this command. Keep it to a single sentence.",
                     },
                 },
                 "required": ["command", "explanation"],
@@ -84,6 +88,7 @@ READ_ONLY_COMMANDS = [
     "less",
     "more",
     "echo",
+    "head",
     "tail",
     "wc",
     "grep",
@@ -91,4 +96,5 @@ READ_ONLY_COMMANDS = [
     "ack",
     "which",
     "sed",
+    "find",
 ]

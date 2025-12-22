@@ -10,6 +10,11 @@ def is_read_only_command(command: str) -> bool:
     if ">" in command:
         return False
 
+    # Replace everything that potentially runs another command with a pipe
+    command = command.replace("&&", "|")
+    command = command.replace("||", "|")
+    command = command.replace(";", "|")
+
     pipes = command.split("|")
     for pipe in pipes:
         if pipe.strip().split()[0] not in READ_ONLY_COMMANDS:
