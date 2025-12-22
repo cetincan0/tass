@@ -33,11 +33,11 @@ class TassApp:
         test_url = f"{self.host}/v1/models"
         try:
             response = requests.get(test_url, timeout=2)
-            console.print(f"Terminal Assistant [green](LLM connection ✓)[/green]")
+            console.print("Terminal Assistant [green](LLM connection ✓)[/green]")
             if response.status_code == 200:
                 return
         except Exception:
-            console.print(f"Terminal Assistant [red](LLM connection ✗)[/red]")
+            console.print("Terminal Assistant [red](LLM connection ✗)[/red]")
 
         console.print("\n[red]Could not connect to LLM[/red]")
         console.print(f"If your LLM isn't running on {self.host}, you can set the [bold]TASS_HOST[/] environment variable to a different URL.")
