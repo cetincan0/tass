@@ -37,7 +37,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Edits a file. Replaces the instance of 'find' with 'replace'. 'find' and 'replace' are exact strings.The file must be read at least once before calling this tool.",
+            "description": "Edits a file. Removes the contents between the lines 'line_start' and 'line_end' inclusive entirely and replaces it with 'replace'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -45,13 +45,17 @@ TOOLS = [
                         "type": "string",
                         "description": "Relative path of the file",
                     },
-                    "find": {
-                        "type": "string",
-                        "description": "The string to find",
+                    "line_start": {
+                        "type": "integer",
+                        "description": "The first line to remove the contents of (inclusive)",
+                    },
+                    "line_end": {
+                        "type": "integer",
+                        "description": "The last line to remove the contents of (inclusive)",
                     },
                     "replace": {
                         "type": "string",
-                        "description": "The string to replace with",
+                        "description": "The string to replace with. Must have the correct spacing and indentation for all lines.",
                     },
                 },
                 "required": ["path", "find", "replace"],
@@ -63,7 +67,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a file's contents (up to 1000 lines)",
+            "description": "Read a file's contents (up to 1000 lines). The output will be identical to calling `cat -n <path>` with preceding spaces, line number and a tab.",
             "parameters": {
                 "type": "object",
                 "properties": {

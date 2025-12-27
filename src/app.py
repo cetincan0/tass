@@ -124,15 +124,29 @@ class TassApp:
             return self.call_llm()
 
     def read_file(self, path: str, start: int = 1) -> str:
-        console.print(f" └ Reading file [bold]{path}[/]...")
+        if start == 1:
+            console.print(f" └ Reading file [bold]{path}[/]...")
+        else:
+            console.print(f" └ Reading file [bold]{path}[/] (from line {start})...")
 
         try:
-            with open(path) as f:
-                out = f.read()
+            result = subprocess.run(
+                f"cat -n {path}",
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
         except Exception as e:
             console.print("   [red]read_file failed[/red]")
             console.print(f"   [red]{str(e)}[/red]")
             return f"read_file failed: {str(e)}"
+
+        out = result.stdout
+        err = result.stderr
+        if result.returncode != 0:
+            console.print("   [red]read_file failed[/red]")
+            console.print(f"   [red]{err}[/red]")
+            return f"read_file failed: {err}"
 
         lines = []
         line_num = 1
@@ -151,11 +165,22 @@ class TassApp:
         console.print("   [green]Command succeeded[/green]")
         return "".join(lines)
 
-    def edit_file(self, path: str, find: str, replace: str) -> str:
-        find_with_minuses = "\n".join([f"-{line}" for line in find.split("\n")])
+    def edit_file(self, path: str, line_start: int, line_end: int, replace: str) -> str:
+        with open(path, "r") as f:
+            original_content = f.read()
+
+        original_lines = original_content.split("\n")
+        replaced_lines = original_lines[line_start - 1:line_end]
+        new_content = "\n".join(
+            original_lines[:line_start - 1]
+            + replace.split("\n")
+            + original_lines[line_end:]
+        )
+
+        replaced_with_minuses = "\n".join([f"-{line}" for line in replaced_lines])
         replace_with_pluses = "\n".join([f"+{line}" for line in replace.split("\n")])
         console.print()
-        console.print(Markdown(f"```diff\nEditing {path}\n{find_with_minuses}\n{replace_with_pluses}\n```"))
+        console.print(Markdown(f"```diff\nEditing {path}\n{replaced_with_minuses}\n{replace_with_pluses}\n```"))
         answer = console.input("\n[bold]Run?[/] ([bold]Y[/]/n): ").strip().lower()
         if answer not in ("yes", "y", ""):
             reason = console.input("Why not? (optional, press Enter to skip): ").strip()
@@ -163,16 +188,6 @@ class TassApp:
 
         console.print(" └ Running...")
         try:
-            with open(path, "r") as f:
-                original_content = f.read()
-
-            if find not in original_content:
-                console.print("   [red]edit_file failed[/red]")
-                console.print(f"   [red]edit_file failed:\n'{find}'\nnot found in file[/red]")
-                return f"edit_file failed: '{find}' not found in file"
-
-            new_content = original_content.replace(find, replace)
-
             with open(path, "w") as f:
                 f.write(new_content)
         except Exception as e:
