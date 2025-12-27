@@ -1,8 +1,5 @@
 from pathlib import Path
 
-_apply_patch_path = Path(__file__).resolve().parent / "third_party" / "apply_patch.md"
-APPLY_PATCH_PROMPT = _apply_patch_path.read_text().strip()
-
 _cwd_path = Path.cwd().resolve()
 
 SYSTEM_PROMPT = f"""You are Terminal-Assistant, a helpful AI that executes shell commands based on natural-language requests.
@@ -11,9 +8,7 @@ If the user's request involves making changes to the filesystem such as creating
 
 If a user asks for an answer or explanation to something instead of requesting to run a command, answer briefly and concisely. Do not supply extra information, suggestions, tips, or anything of the sort.
 
-Current working directory: {_cwd_path}
-
-{APPLY_PATCH_PROMPT}"""
+Current working directory: {_cwd_path}"""
 
 TOOLS = [
     {
@@ -41,18 +36,25 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "apply_patch",
-            "description": "Patch a file",
+            "name": "edit_file",
+            "description": "Edits a file. Replaces the instance of 'find' with 'replace'. 'find' and 'replace' are exact strings.The file must be read at least once before calling this tool.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "patch": {
+                    "path": {
                         "type": "string",
-                        "description": "Formatted patch code",
-                        "default": "*** Begin Patch\n*** End Patch\n",
+                        "description": "Relative path of the file",
+                    },
+                    "find": {
+                        "type": "string",
+                        "description": "The string to find",
+                    },
+                    "replace": {
+                        "type": "string",
+                        "description": "The string to replace with",
                     },
                 },
-                "required": ["patch"],
+                "required": ["path", "find", "replace"],
                 "$schema": "http://json-schema.org/draft-07/schema#",
             },
         },

@@ -10,7 +10,6 @@ from src.constants import (
     SYSTEM_PROMPT,
     TOOLS,
 )
-from src.third_party.apply_patch import apply_patch
 from src.utils import (
     is_read_only_command,
 )
@@ -25,8 +24,8 @@ class TassApp:
         self.host = os.environ.get("TASS_HOST", "http://localhost:8080")
         self.TOOLS_MAP = {
             "execute": self.execute,
-            "apply_patch": self.apply_patch_tass,
             "read_file": self.read_file,
+            "edit_file": self.edit_file,
         }
 
     def _check_llm_host(self):
@@ -127,44 +126,62 @@ class TassApp:
     def read_file(self, path: str, start: int = 1) -> str:
         console.print(f" └ Reading file [bold]{path}[/]...")
 
+        try:
+            with open(path) as f:
+                out = f.read()
+        except Exception as e:
+            console.print("   [red]read_file failed[/red]")
+            console.print(f"   [red]{str(e)}[/red]")
+            return f"read_file failed: {str(e)}"
+
         lines = []
-        with open(path) as f:
-            line_num = 1
-            for line in f:
-                if line_num < start:
-                    line_num += 1
-                    continue
-
-                lines.append(line)
+        line_num = 1
+        for line in out.split("\n"):
+            if line_num < start:
                 line_num += 1
+                continue
 
-                if len(lines) >= 1000:
-                    lines.append("... (truncated)")
-                    break
+            lines.append(line)
+            line_num += 1
+
+            if len(lines) >= 1000:
+                lines.append("... (truncated)")
+                break
 
         console.print("   [green]Command succeeded[/green]")
         return "".join(lines)
 
-    def apply_patch_tass(self, patch: str) -> str:
+    def edit_file(self, path: str, find: str, replace: str) -> str:
+        find_with_minuses = "\n".join([f"-{line}" for line in find.split("\n")])
+        replace_with_pluses = "\n".join([f"+{line}" for line in replace.split("\n")])
         console.print()
-        console.print(Markdown(f"```diff\n{patch}\n```"))
+        console.print(Markdown(f"```diff\nEditing {path}\n{find_with_minuses}\n{replace_with_pluses}\n```"))
         answer = console.input("\n[bold]Run?[/] ([bold]Y[/]/n): ").strip().lower()
         if answer not in ("yes", "y", ""):
             reason = console.input("Why not? (optional, press Enter to skip): ").strip()
             return f"User declined: {reason or 'no reason'}"
 
         console.print(" └ Running...")
-
         try:
-            apply_patch(patch)
+            with open(path, "r") as f:
+                original_content = f.read()
+
+            if find not in original_content:
+                console.print("   [red]edit_file failed[/red]")
+                console.print(f"   [red]edit_file failed:\n'{find}'\nnot found in file[/red]")
+                return f"edit_file failed: '{find}' not found in file"
+
+            new_content = original_content.replace(find, replace)
+
+            with open(path, "w") as f:
+                f.write(new_content)
         except Exception as e:
-            console.print("   [red]apply_patch failed[/red]")
+            console.print("   [red]edit_file failed[/red]")
             console.print(f"   [red]{str(e)}[/red]")
-            return f"apply_patch failed: {str(e)}"
+            return f"edit_file failed: {str(e)}"
 
         console.print("   [green]Command succeeded[/green]")
-
-        return "Command output (exit 0): apply_patch succeeded"
+        return f"Successfully edited {path}"
 
     def execute(self, command: str, explanation: str) -> str:
         command = command.strip()
@@ -196,19 +213,21 @@ class TassApp:
             console.print(f"   [red]{str(e)}[/red]")
             return f"subprocess.run failed: {str(e)}"
 
-        out = result.stdout.strip()
-        err = result.stderr.strip()
+        out = result.stdout
+        err = result.stderr
         if result.returncode == 0:
             console.print("   [green]Command succeeded[/green]")
         else:
             console.print(f"   [red]Command failed[/red] (code {result.returncode})")
             console.print(f"   [red]{err}[/red]")
 
-        if len(out) > 5000:
-            out = f"{out[:5000]}... (Truncated)"
+        if len(out.split("\n")) > 5000:
+            out_first_1000 = "\n".join(out.split("\n")[:1000])
+            out = f"{out_first_1000}... (Truncated)"
 
         if len(err) > 5000:
-            err = f"{err[:5000]}... (Truncated)"
+            err_first_1000 = "\n".join(err.split("\n")[:1000])
+            err = f"{err_first_1000}... (Truncated)"
 
         return f"Command output (exit {result.returncode}):\n{out}\n{err}"
 
