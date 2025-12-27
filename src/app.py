@@ -221,13 +221,19 @@ class TassApp:
             console.print(f"   [red]Command failed[/red] (code {result.returncode})")
             console.print(f"   [red]{err}[/red]")
 
-        if len(out.split("\n")) > 5000:
+        if len(out.split("\n")) > 1000:
             out_first_1000 = "\n".join(out.split("\n")[:1000])
             out = f"{out_first_1000}... (Truncated)"
 
-        if len(err) > 5000:
+        if len(err.split("\n")) > 1000:
             err_first_1000 = "\n".join(err.split("\n")[:1000])
             err = f"{err_first_1000}... (Truncated)"
+
+        if len(out) > 20000:
+            out = f"{out[:20000]}... (Truncated)"
+
+        if len(err) > 20000:
+            err = f"{err[:20000]}... (Truncated)"
 
         return f"Command output (exit {result.returncode}):\n{out}\n{err}"
 
