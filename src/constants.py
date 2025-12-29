@@ -37,7 +37,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Edits a file. Removes the contents between the lines 'line_start' and 'line_end' inclusive entirely and replaces it with 'replace'.",
+            "description": "Edits (or creates) a file. Makes multiple replacements in one call. Each edit removes the contents between 'line_start' and 'line_end' inclusive and replaces it with 'replace'. If creating a file, only return a single edit where the line_start and line_end are both 1 and replace is the entire contents of the file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -45,20 +45,30 @@ TOOLS = [
                         "type": "string",
                         "description": "Relative path of the file",
                     },
-                    "line_start": {
-                        "type": "integer",
-                        "description": "The first line to remove the contents of (inclusive)",
-                    },
-                    "line_end": {
-                        "type": "integer",
-                        "description": "The last line to remove the contents of (inclusive)",
-                    },
-                    "replace": {
-                        "type": "string",
-                        "description": "The string to replace with. Must have the correct spacing and indentation for all lines.",
+                    "edits": {
+                        "type": "array",
+                        "description": "List of edits to apply. Each edit must contain 'line_start', 'line_end', and 'replace'.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "line_start": {
+                                    "type": "integer",
+                                    "description": "The first line to remove (inclusive)",
+                                },
+                                "line_end": {
+                                    "type": "integer",
+                                    "description": "The last line to remove (inclusive)",
+                                },
+                                "replace": {
+                                    "type": "string",
+                                    "description": "The string to replace with. Must have the correct spacing and indentation for all lines.",
+                                },
+                            },
+                            "required": ["line_start", "line_end", "replace"],
+                        },
                     },
                 },
-                "required": ["path", "find", "replace"],
+                "required": ["path", "edits"],
                 "$schema": "http://json-schema.org/draft-07/schema#",
             },
         },

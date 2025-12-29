@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+from pathlib import Path
 
 import requests
 from rich.console import Console
@@ -56,7 +57,7 @@ class TassApp:
             console.print(f"[red]Unable to verify new host {self.host}. Continuing with it anyway.[/red]")
 
     def summarize(self):
-        max_messages = 10
+        max_messages = 20
         if len(self.messages) <= max_messages:
             return
 
@@ -165,22 +166,52 @@ class TassApp:
         console.print("   [green]Command succeeded[/green]")
         return "".join(lines)
 
-    def edit_file(self, path: str, line_start: int, line_end: int, replace: str) -> str:
-        with open(path, "r") as f:
-            original_content = f.read()
+    def edit_file(self, path: str, edits: list[dict]) -> str:
+        for edit in edits:
+            edit["applied"] = False
 
+        def find_edit(n: int) -> dict | None:
+            for edit in edits:
+                if edit["line_start"] <= n <= edit["line_end"]:
+                    return edit
+
+            return None
+
+        file_exists = Path(path).exists()
+        if file_exists:
+            with open(path, "r") as f:
+                original_content = f.read()
+        else:
+            original_content = ""
+
+        final_lines = []
         original_lines = original_content.split("\n")
-        replaced_lines = original_lines[line_start - 1:line_end]
-        new_content = "\n".join(
-            original_lines[:line_start - 1]
-            + replace.split("\n")
-            + original_lines[line_end:]
-        )
+        diff_text = f"{'Editing' if file_exists else 'Creating'} {path}"
+        for i, line in enumerate(original_lines):
+            line_num = i + 1
+            edit = find_edit(line_num)
+            if not edit:
+                final_lines.append(line)
+                continue
 
-        replaced_with_minuses = "\n".join([f"-{line}" for line in replaced_lines])
-        replace_with_pluses = "\n".join([f"+{line}" for line in replace.split("\n")])
+            if edit["applied"]:
+                continue
+
+            replace_lines = edit["replace"].split("\n")
+            final_lines.extend(replace_lines)
+            original_lines = original_content.split("\n")
+            replaced_lines = original_lines[edit["line_start"] - 1:edit["line_end"]]
+
+            prev_line_num = line_num if line_num == 1 else line_num - 1
+            line_before = "" if i == 0 else f" {original_lines[i - 1]}\n"
+            line_after = "" if i == len(original_lines) - 1 else f"\n {original_lines[i + 1]}"
+            replaced_with_minuses = "\n".join([f"-{line}" for line in replaced_lines]) if file_exists else ""
+            replace_with_pluses = "\n".join([f"+{line}" for line in edit["replace"].split("\n")])
+            diff_text = f"{diff_text}\n\n@@ -{prev_line_num},{len(replaced_lines)} +{prev_line_num},{len(replace_lines)} @@\n{line_before}{replaced_with_minuses}\n{replace_with_pluses}{line_after}"
+            edit["applied"] = True
+
         console.print()
-        console.print(Markdown(f"```diff\nEditing {path}\n{replaced_with_minuses}\n{replace_with_pluses}\n```"))
+        console.print(Markdown(f"```diff\n{diff_text}\n```"))
         answer = console.input("\n[bold]Run?[/] ([bold]Y[/]/n): ").strip().lower()
         if answer not in ("yes", "y", ""):
             reason = console.input("Why not? (optional, press Enter to skip): ").strip()
@@ -189,7 +220,7 @@ class TassApp:
         console.print(" └ Running...")
         try:
             with open(path, "w") as f:
-                f.write(new_content)
+                f.write("\n".join(final_lines))
         except Exception as e:
             console.print("   [red]edit_file failed[/red]")
             console.print(f"   [red]{str(e)}[/red]")
