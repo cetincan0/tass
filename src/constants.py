@@ -2,7 +2,7 @@ from pathlib import Path
 
 _cwd_path = Path.cwd().resolve()
 
-SYSTEM_PROMPT = f"""You are Terminal-Assistant, a helpful AI that executes shell commands based on natural-language requests.
+SYSTEM_PROMPT = f"""You are tass, or Terminal Assistant, a helpful AI that executes shell commands based on natural-language requests.
 
 If the user's request involves making changes to the filesystem such as creating or deleting files or directories, you MUST first check whether the file or directory exists before proceeding.
 

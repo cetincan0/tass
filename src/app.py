@@ -4,8 +4,12 @@ import subprocess
 from pathlib import Path
 
 import requests
-from rich.console import Console
+
+from rich.console import Console, Group
+from rich.live import Live
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.text import Text
 
 from src.constants import (
     SYSTEM_PROMPT,
@@ -52,7 +56,6 @@ class TassApp:
             response = requests.get(f"{self.host}/v1/models", timeout=2)
             if response.status_code == 200:
                 console.print(f"[green]Connection established to {self.host}[/green]")
-                return
         except Exception:
             console.print(f"[red]Unable to verify new host {self.host}. Continuing with it anyway.[/red]")
 
@@ -72,14 +75,17 @@ class TassApp:
             f"{self.host}/v1/chat/completions",
             json={
                 "messages": self.messages + [{"role": "user", "content": prompt}],
-                "chat_template_kwargs": {"reasoning_effort": "medium"},
+                "tools": TOOLS,  # For caching purposes
+                "chat_template_kwargs": {
+                    "reasoning_effort": "medium",
+                },
             },
         )
         data = response.json()
         summary = data["choices"][0]["message"]["content"]
         self.messages = [self.messages[0], {"role": "assistant", "content": f"Summary of the conversation so far:\n{summary}"}]
 
-    def call_llm(self) -> str | None:
+    def call_llm(self) -> bool:
         response = requests.post(
             f"{self.host}/v1/chat/completions",
             json={
@@ -87,39 +93,107 @@ class TassApp:
                 "tools": TOOLS,
                 "chat_template_kwargs": {
                     "reasoning_effort": "medium",
-                }
+                },
+                "stream": True,
             },
+            stream=True,
         )
 
-        data = response.json()
-        message = data["choices"][0]["message"]
-        if not message.get("tool_calls"):
-            return message["content"]
+        content = ""
+        reasoning_content = ""
+        tool_calls_map = {}
 
-        tool_name = message["tool_calls"][0]["function"]["name"]
-        tool_args_str = message["tool_calls"][0]["function"]["arguments"]
+        def generate_layout(reasoning_content: str, content: str):
+            groups = []
+
+            if reasoning_content:
+                groups.append(Text(""))
+                groups.append(Panel(Text(reasoning_content, style="grey50"), title="Thought process", title_align="left", style="grey50"))
+
+            if content:
+                groups.append(Text(""))
+                groups.append(Markdown(content))
+                groups.append(Text(""))
+
+            return Group(*groups)
+
+        with Live(generate_layout(reasoning_content, content), refresh_per_second=10) as live:
+            for line in response.iter_lines():
+                line = line.decode("utf-8")
+                if not line.strip():
+                    continue
+
+                if line == "data: [DONE]":
+                    continue
+
+                chunk = json.loads(line.removeprefix("data:"))
+                delta = chunk["choices"][0]["delta"]
+                if delta.get("content"):
+                    content += delta["content"]
+                    last_three_lines = "\n".join(reasoning_content.rstrip().split("\n")[-3:])
+                    live.update(generate_layout(last_three_lines, content.rstrip()))
+                if delta.get("reasoning_content" ):
+                    reasoning_content += delta["reasoning_content"]
+                    last_three_lines = "\n".join(reasoning_content.rstrip().split("\n")[-3:])
+                    live.update(generate_layout(last_three_lines, content.rstrip()))
+
+                for tool_call_delta in delta.get("tool_calls", []):
+                    index = tool_call_delta["index"]
+                    if index not in tool_calls_map:
+                        tool_calls_map[index] = (
+                            {
+                                "index": index,
+                                "id": "",
+                                "type": "",
+                                "function": {
+                                    "name": "",
+                                    "arguments": "",
+                                },
+                            }
+                        )
+
+                    tool_call = tool_calls_map[index]
+                    if tool_call_delta.get("id"):
+                        tool_call["id"] += tool_call_delta["id"]
+                    if tool_call_delta.get("type"):
+                        tool_call["type"] += tool_call_delta["type"]
+                    if tool_call_delta.get("function"):
+                        function = tool_call_delta["function"]
+                        if function.get("name"):
+                            tool_call["function"]["name"] += function["name"]
+                        if function.get("arguments"):
+                            tool_call["function"]["arguments"] += function["arguments"]
+
+                if chunk["choices"][0]["finish_reason"]:
+                    last_three_lines = "\n".join(reasoning_content.rstrip().split("\n")[-3:])
+                    live.update(generate_layout(last_three_lines, content.rstrip()))
+
         self.messages.append(
             {
                 "role": "assistant",
-                "tool_calls": [
-                    {
-                        "index": 0,
-                        "id": "id1",
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": tool_args_str
-                        }
-                    }
-                ]
+                "content": content,
+                "reasoning_content": reasoning_content,
+                "tool_calls": list(tool_calls_map.values()),
             }
         )
+
+        if not tool_calls_map:
+            return True
+
         try:
-            tool = self.TOOLS_MAP[tool_name]
-            tool_args = json.loads(tool_args_str)
-            result = tool(**tool_args)
-            self.messages.append({"role": "tool", "content": result})
-            return None
+            for tool_call in tool_calls_map.values():
+                tool = self.TOOLS_MAP[tool_call["function"]["name"]]
+                tool_args = json.loads(tool_call["function"]["arguments"])
+                result = tool(**tool_args)
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "name": tool_call["function"]["name"],
+                        "content": result,
+                    }
+                )
+            return False
         except Exception as e:
             self.messages.append({"role": "user", "content": str(e)})
             return self.call_llm()
@@ -139,14 +213,15 @@ class TassApp:
             )
         except Exception as e:
             console.print("   [red]read_file failed[/red]")
-            console.print(f"   [red]{str(e)}[/red]")
+            console.print(f"   [red]{str(e).strip()}[/red]")
             return f"read_file failed: {str(e)}"
 
         out = result.stdout
-        err = result.stderr
+        err = result.stderr.strip()
         if result.returncode != 0:
             console.print("   [red]read_file failed[/red]")
-            console.print(f"   [red]{err}[/red]")
+            if err:
+                console.print(f"   [red]{err}[/red]")
             return f"read_file failed: {err}"
 
         lines = []
@@ -204,7 +279,7 @@ class TassApp:
 
             prev_line_num = line_num if line_num == 1 else line_num - 1
             line_before = "" if i == 0 else f" {original_lines[i - 1]}\n"
-            line_after = "" if i == len(original_lines) - 1 else f"\n {original_lines[i + 1]}"
+            line_after = "" if edit["line_end"] == len(original_lines) else f"\n {original_lines[edit['line_end']]}"
             replaced_with_minuses = "\n".join([f"-{line}" for line in replaced_lines]) if file_exists else ""
             replace_with_pluses = "\n".join([f"+{line}" for line in edit["replace"].split("\n")])
             diff_text = f"{diff_text}\n\n@@ -{prev_line_num},{len(replaced_lines)} +{prev_line_num},{len(replace_lines)} @@\n{line_before}{replaced_with_minuses}\n{replace_with_pluses}{line_after}"
@@ -223,8 +298,8 @@ class TassApp:
                 f.write("\n".join(final_lines))
         except Exception as e:
             console.print("   [red]edit_file failed[/red]")
-            console.print(f"   [red]{str(e)}[/red]")
-            return f"edit_file failed: {str(e)}"
+            console.print(f"   [red]{str(e).strip()}[/red]")
+            return f"edit_file failed: {str(e).strip()}"
 
         console.print("   [green]Command succeeded[/green]")
         return f"Successfully edited {path}"
@@ -256,16 +331,17 @@ class TassApp:
             )
         except Exception as e:
             console.print("   [red]subprocess.run failed[/red]")
-            console.print(f"   [red]{str(e)}[/red]")
-            return f"subprocess.run failed: {str(e)}"
+            console.print(f"   [red]{str(e).strip()}[/red]")
+            return f"subprocess.run failed: {str(e).strip()}"
 
         out = result.stdout
-        err = result.stderr
+        err = result.stderr.strip()
         if result.returncode == 0:
             console.print("   [green]Command succeeded[/green]")
         else:
             console.print(f"   [red]Command failed[/red] (code {result.returncode})")
-            console.print(f"   [red]{err}[/red]")
+            if err:
+                console.print(f"   [red]{err}[/red]")
 
         if len(out.split("\n")) > 1000:
             out_first_1000 = "\n".join(out.split("\n")[:1000])
@@ -286,13 +362,14 @@ class TassApp:
     def run(self):
         try:
             self._check_llm_host()
+            console.print()
         except KeyboardInterrupt:
             console.print("\nBye!")
             return
 
         while True:
             try:
-                user_input = console.input("\n> ").strip()
+                user_input = console.input("> ").strip()
             except KeyboardInterrupt:
                 console.print("\nBye!")
                 break
@@ -308,14 +385,11 @@ class TassApp:
 
             while True:
                 try:
-                    llm_resp = self.call_llm()
+                    finished = self.call_llm()
                 except Exception as e:
                     console.print(f"Failed to call LLM: {str(e)}")
                     break
 
-                if llm_resp is not None:
-                    console.print("")
-                    console.print(Markdown(llm_resp))
-                    self.messages.append({"role": "assistant", "content": llm_resp})
+                if finished:
                     self.summarize()
                     break
