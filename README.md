@@ -9,7 +9,7 @@ This tool can run commands including ones that can modify, move, or delete files
 ## Installation
 
 ```
-uv tools install tass
+uv tool install tass
 ```
 
 You can run it with
