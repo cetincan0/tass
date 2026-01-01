@@ -15,9 +15,7 @@ from src.constants import (
     SYSTEM_PROMPT,
     TOOLS,
 )
-from src.utils import (
-    is_read_only_command,
-)
+from src.utils import is_read_only_command
 
 console = Console()
 
@@ -102,22 +100,34 @@ class TassApp:
         content = ""
         reasoning_content = ""
         tool_calls_map = {}
+        timings_str = ""
 
-        def generate_layout(reasoning_content: str, content: str):
+        def generate_layout():
             groups = []
 
             if reasoning_content:
+                last_three_lines = "\n".join(reasoning_content.rstrip().split("\n")[-3:])
                 groups.append(Text(""))
-                groups.append(Panel(Text(reasoning_content, style="grey50"), title="Thought process", title_align="left", style="grey50"))
+                groups.append(
+                    Panel(
+                        Text(
+                            last_three_lines,
+                            style="grey50",
+                        ),
+                        title="Thought process",
+                        title_align="left",
+                        subtitle=timings_str,
+                        style="grey50",
+                    )
+                )
 
             if content:
                 groups.append(Text(""))
-                groups.append(Markdown(content))
-                groups.append(Text(""))
+                groups.append(Markdown(content.rstrip()))
 
             return Group(*groups)
 
-        with Live(generate_layout(reasoning_content, content), refresh_per_second=10) as live:
+        with Live(generate_layout(), refresh_per_second=10) as live:
             for line in response.iter_lines():
                 line = line.decode("utf-8")
                 if not line.strip():
@@ -130,12 +140,10 @@ class TassApp:
                 delta = chunk["choices"][0]["delta"]
                 if delta.get("content"):
                     content += delta["content"]
-                    last_three_lines = "\n".join(reasoning_content.rstrip().split("\n")[-3:])
-                    live.update(generate_layout(last_three_lines, content.rstrip()))
+                    live.update(generate_layout())
                 if delta.get("reasoning_content" ):
                     reasoning_content += delta["reasoning_content"]
-                    last_three_lines = "\n".join(reasoning_content.rstrip().split("\n")[-3:])
-                    live.update(generate_layout(last_three_lines, content.rstrip()))
+                    live.update(generate_layout())
 
                 for tool_call_delta in delta.get("tool_calls", []):
                     index = tool_call_delta["index"]
@@ -164,9 +172,15 @@ class TassApp:
                         if function.get("arguments"):
                             tool_call["function"]["arguments"] += function["arguments"]
 
+                if all(k in chunk.get("timings", {}) for k in ["prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second"]):
+                    timings = chunk["timings"]
+                    timings_str = (
+                        f"Input: {timings['prompt_n']:,} tokens, {timings['prompt_per_second']:,.2f} tok/s | "
+                        f"Output: {timings['predicted_n']:,} tokens, {timings['predicted_per_second']:,.2f} tok/s"
+                    )
+
                 if chunk["choices"][0]["finish_reason"]:
-                    last_three_lines = "\n".join(reasoning_content.rstrip().split("\n")[-3:])
-                    live.update(generate_layout(last_three_lines, content.rstrip()))
+                    live.update(generate_layout())
 
         self.messages.append(
             {
@@ -362,14 +376,22 @@ class TassApp:
     def run(self):
         try:
             self._check_llm_host()
-            console.print()
         except KeyboardInterrupt:
             console.print("\nBye!")
             return
 
         while True:
+            console.print()
             try:
-                user_input = console.input("> ").strip()
+                input_lines = []
+                while True:
+                    input_line = console.input("> ")
+                    if not input_line or input_line[-1] != "\\":
+                        input_lines.append(input_line)
+                        break
+                    input_lines.append(input_line[:-1])
+
+                user_input = "\n".join(input_lines)
             except KeyboardInterrupt:
                 console.print("\nBye!")
                 break
