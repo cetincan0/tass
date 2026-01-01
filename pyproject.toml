@@ -1,6 +1,6 @@
 [project]
 name = "tass"
-version = "0.1.7"
+version = "0.1.8"
 description = "A terminal assistant that allows you to ask an LLM to run commands."
 readme = "README.md"
 requires-python = ">=3.10"
