@@ -1,5 +1,9 @@
 # tass
 
+<p align="center">
+  <img src="assets/tass.gif" alt="Demo" />
+</p>
+
 A terminal assistant that allows you to ask an LLM to run commands.
 
 ## Warning
@@ -26,7 +30,7 @@ You can run it with
 tass
 ```
 
-tass has only been tested with gpt-oss-120b using llama.cpp so far, but in theory any LLM with tool calling capabilities should work. By default, it will try connecting to http://localhost:8080. If you want to use another host, set the `TASS_HOST` environment variable.
+tass has only been tested with gpt-oss-120b using llama.cpp so far, but in theory any LLM with tool calling capabilities should work. By default, it will try connecting to http://localhost:8080. If you want to use another host, set the `TASS_HOST` environment variable. At the moment there's no support for connecting tass to a non-local API, nor are there plans for it. For the time being, I plan on keeping tass completely local. There's no telemetry, no logs, just a simple REPL loop.
 
 Once it's running, you can ask questions or give commands like "Create an empty file called test.txt" and it will propose a command to run after user confirmation.
 

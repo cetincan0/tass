@@ -64,11 +64,14 @@ class TassApp:
 
         prompt = (
             "The conversation is becoming long and might soon go beyond the "
-            "context limit. Please provide a concise summary of the conversation, "
-            "preserving all important details. Keep the summary short enough "
-            "to fit within a few paragraphs at the most."
+            "context limit. Please provide a detailed summary of the conversation, "
+            "preserving all important details. Make sure context is not lost so that "
+            "the conversation can continue without needing to reclarify anything. "
+            "You don't have to preserve entire contents of files that have been read "
+            " or edited, they can be read again if necessary."
         )
 
+        console.print("\n - Summarizing conversation...")
         response = requests.post(
             f"{self.host}/v1/chat/completions",
             json={
@@ -82,6 +85,7 @@ class TassApp:
         data = response.json()
         summary = data["choices"][0]["message"]["content"]
         self.messages = [self.messages[0], {"role": "assistant", "content": f"Summary of the conversation so far:\n{summary}"}]
+        console.print("   [green]Summarization completed[/green]")
 
     def call_llm(self) -> bool:
         response = requests.post(
