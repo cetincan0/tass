@@ -141,15 +141,29 @@ class TassApp:
                     continue
 
                 chunk = json.loads(line.removeprefix("data:"))
-                delta = chunk["choices"][0]["delta"]
-                if delta.get("content"):
-                    content += delta["content"]
+                if all(k in chunk.get("timings", {}) for k in ["prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second"]):
+                    timings = chunk["timings"]
+                    timings_str = (
+                        f"Input: {timings['prompt_n']:,} tokens, {timings['prompt_per_second']:,.2f} tok/s | "
+                        f"Output: {timings['predicted_n']:,} tokens, {timings['predicted_per_second']:,.2f} tok/s"
+                    )
+
+                if chunk["choices"][0]["finish_reason"]:
                     live.update(generate_layout())
-                if delta.get("reasoning_content" ):
+
+                delta = chunk["choices"][0]["delta"]
+                if not any([delta.get(key) for key in ["content", "reasoning_content", "tool_calls"]]):
+                    continue
+
+                if delta.get("reasoning_content"):
                     reasoning_content += delta["reasoning_content"]
                     live.update(generate_layout())
 
-                for tool_call_delta in delta.get("tool_calls", []):
+                if delta.get("content"):
+                    content += delta["content"]
+                    live.update(generate_layout())
+
+                for tool_call_delta in delta.get("tool_calls") or []:
                     index = tool_call_delta["index"]
                     if index not in tool_calls_map:
                         tool_calls_map[index] = (
@@ -176,22 +190,12 @@ class TassApp:
                         if function.get("arguments"):
                             tool_call["function"]["arguments"] += function["arguments"]
 
-                if all(k in chunk.get("timings", {}) for k in ["prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second"]):
-                    timings = chunk["timings"]
-                    timings_str = (
-                        f"Input: {timings['prompt_n']:,} tokens, {timings['prompt_per_second']:,.2f} tok/s | "
-                        f"Output: {timings['predicted_n']:,} tokens, {timings['predicted_per_second']:,.2f} tok/s"
-                    )
-
-                if chunk["choices"][0]["finish_reason"]:
-                    live.update(generate_layout())
-
         self.messages.append(
             {
                 "role": "assistant",
-                "content": content,
-                "reasoning_content": reasoning_content,
-                "tool_calls": list(tool_calls_map.values()),
+                "content": content.strip() or None,
+                "reasoning_content": reasoning_content.strip() or None,
+                "tool_calls": list(tool_calls_map.values()) or None,
             }
         )
 

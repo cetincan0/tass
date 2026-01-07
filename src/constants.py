@@ -113,4 +113,5 @@ READ_ONLY_COMMANDS = [
     "which",
     "sed",
     "find",
+    "test",
 ]
