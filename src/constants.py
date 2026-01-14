@@ -1,6 +1,6 @@
 from pathlib import Path
 
-_cwd_path = Path.cwd().resolve()
+cwd_path = Path.cwd().resolve()
 
 SYSTEM_PROMPT = f"""You are tass, or Terminal Assistant, a helpful AI that executes shell commands based on natural-language requests.
 
@@ -8,7 +8,7 @@ If the user's request involves making changes to the filesystem such as creating
 
 If a user asks for an answer or explanation to something instead of requesting to run a command, answer briefly and concisely. Do not supply extra information, suggestions, tips, or anything of the sort.
 
-Current working directory: {_cwd_path}"""
+Current working directory: {cwd_path}"""
 
 TOOLS = [
     {
@@ -37,7 +37,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Edits (or creates) a file. Makes multiple replacements in one call. Each edit removes the contents between 'line_start' and 'line_end' inclusive and replaces it with 'replace'. If creating a file, only return a single edit where the line_start and line_end are both 1 and replace is the entire contents of the file.",
+            "description": "Edits (or creates) a file. Can make multiple edits in one call. Each edit replaces the contents between 'line_start' and 'line_end' inclusive with 'content'. If creating a file, only return a single edit where 'line_start' and 'line_end' are both 1 and 'content' is the entire contents of the file. You must use the read_file tool before editing a file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -47,7 +47,7 @@ TOOLS = [
                     },
                     "edits": {
                         "type": "array",
-                        "description": "List of edits to apply. Each edit must contain 'line_start', 'line_end', and 'replace'.",
+                        "description": "List of edits to apply. Each edit must contain 'line_start', 'line_end', and 'content'.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -59,12 +59,12 @@ TOOLS = [
                                     "type": "integer",
                                     "description": "The last line to remove (inclusive)",
                                 },
-                                "replace": {
+                                "content": {
                                     "type": "string",
-                                    "description": "The string to replace with. Must have the correct spacing and indentation for all lines.",
+                                    "description": "The content to replace with. Must have the correct spacing and indentation for all lines.",
                                 },
                             },
-                            "required": ["line_start", "line_end", "replace"],
+                            "required": ["line_start", "line_end", "content"],
                         },
                     },
                 },
@@ -77,7 +77,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a file's contents (up to 1000 lines). The output will be identical to calling `cat -n <path>` with preceding spaces, line number and a tab.",
+            "description": "Read a file's contents (the first 1000 lines by default). When reading a file for the first time, do not change the defaults and always read the first 1000 lines unless you are absolutely certain of which lines need to be read. The output will be identical to calling `cat -n <path>` with preceding spaces, line number and a tab.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -89,6 +89,11 @@ TOOLS = [
                         "type": "integer",
                         "description": "Which line to start reading from",
                         "default": 1,
+                    },
+                    "num_lines": {
+                        "type": "integer",
+                        "description": "Number of lines to read, defaults to 1000",
+                        "default": 1000,
                     },
                 },
                 "required": ["path"],

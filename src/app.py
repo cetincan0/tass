@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 import requests
-
+from prompt_toolkit import prompt
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
@@ -15,7 +15,11 @@ from src.constants import (
     SYSTEM_PROMPT,
     TOOLS,
 )
-from src.utils import is_read_only_command
+from src.utils import (
+    FileCompleter,
+    create_key_bindings,
+    is_read_only_command,
+)
 
 console = Console()
 
@@ -25,6 +29,8 @@ class TassApp:
     def __init__(self):
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.host = os.environ.get("TASS_HOST", "http://localhost:8080")
+        self.key_bindings = create_key_bindings()
+        self.file_completer = FileCompleter()
         self.TOOLS_MAP = {
             "execute": self.execute,
             "read_file": self.read_file,
@@ -193,9 +199,9 @@ class TassApp:
         self.messages.append(
             {
                 "role": "assistant",
-                "content": content.strip() or None,
-                "reasoning_content": reasoning_content.strip() or None,
-                "tool_calls": list(tool_calls_map.values()) or None,
+                "content": content.strip(),
+                "reasoning_content": reasoning_content.strip(),
+                "tool_calls": list(tool_calls_map.values()) or [],
             }
         )
 
@@ -220,11 +226,12 @@ class TassApp:
             self.messages.append({"role": "user", "content": str(e)})
             return self.call_llm()
 
-    def read_file(self, path: str, start: int = 1) -> str:
-        if start == 1:
+    def read_file(self, path: str, start: int = 1, num_lines: int = 1000) -> str:
+        if start == 1 and num_lines == 1000:
             console.print(f" └ Reading file [bold]{path}[/]...")
         else:
-            console.print(f" └ Reading file [bold]{path}[/] (from line {start})...")
+            last_line = start + num_lines - 1
+            console.print(f" └ Reading file [bold]{path}[/] (lines {start}-{last_line})...")
 
         try:
             result = subprocess.run(
@@ -256,14 +263,15 @@ class TassApp:
             lines.append(line)
             line_num += 1
 
-            if len(lines) >= 1000:
+            if len(lines) >= num_lines:
                 lines.append("... (truncated)")
                 break
 
         console.print("   [green]Command succeeded[/green]")
-        return "".join(lines)
+        return "\n".join(lines)
 
     def edit_file(self, path: str, edits: list[dict]) -> str:
+        console.print(json.dumps(edits, indent=2))
         for edit in edits:
             edit["applied"] = False
 
@@ -294,8 +302,9 @@ class TassApp:
             if edit["applied"]:
                 continue
 
-            replace_lines = edit["replace"].split("\n")
-            final_lines.extend(replace_lines)
+            replace_lines = edit["content"].split("\n")
+            if edit["content"]:
+                final_lines.extend(replace_lines)
             original_lines = original_content.split("\n")
             replaced_lines = original_lines[edit["line_start"] - 1:edit["line_end"]]
 
@@ -303,8 +312,10 @@ class TassApp:
             line_before = "" if i == 0 else f" {original_lines[i - 1]}\n"
             line_after = "" if edit["line_end"] == len(original_lines) else f"\n {original_lines[edit['line_end']]}"
             replaced_with_minuses = "\n".join([f"-{line}" for line in replaced_lines]) if file_exists else ""
-            replace_with_pluses = "\n".join([f"+{line}" for line in edit["replace"].split("\n")])
-            diff_text = f"{diff_text}\n\n@@ -{prev_line_num},{len(replaced_lines)} +{prev_line_num},{len(replace_lines)} @@\n{line_before}{replaced_with_minuses}\n{replace_with_pluses}{line_after}"
+            replaced_with_pluses = ""
+            if edit["content"]:
+                replaced_with_pluses = "\n" + "\n".join([f"+{line}" for line in edit["content"].split("\n")])
+            diff_text = f"{diff_text}\n\n@@ -{prev_line_num},{len(replaced_lines)} +{prev_line_num},{len(replace_lines)} @@\n{line_before}{replaced_with_minuses}{replaced_with_pluses}{line_after}"
             edit["applied"] = True
 
         console.print()
@@ -393,12 +404,16 @@ class TassApp:
             try:
                 input_lines = []
                 while True:
-                    input_line = console.input("> ")
+                    input_line = prompt(
+                        "> ",
+                        completer=self.file_completer,
+                        complete_while_typing=True,
+                        key_bindings=self.key_bindings,
+                    )
                     if not input_line or input_line[-1] != "\\":
                         input_lines.append(input_line)
                         break
                     input_lines.append(input_line[:-1])
-
                 user_input = "\n".join(input_lines)
             except KeyboardInterrupt:
                 console.print("\nBye!")
