@@ -271,7 +271,6 @@ class TassApp:
         return "\n".join(lines)
 
     def edit_file(self, path: str, edits: list[dict]) -> str:
-        console.print(json.dumps(edits, indent=2))
         for edit in edits:
             edit["applied"] = False
 
