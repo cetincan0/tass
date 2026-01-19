@@ -1,11 +1,7 @@
 import json
-import os
-import subprocess
-from pathlib import Path
 
-import requests
 from prompt_toolkit import prompt
-from rich.console import Console, Group
+from rich.console import Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -13,34 +9,39 @@ from rich.text import Text
 
 from src.constants import (
     SYSTEM_PROMPT,
-    TOOLS,
+    console,
+)
+from src.llm_client import LLMClient
+from src.tools import (
+    EDIT_FILE_TOOL,
+    EXECUTE_TOOL,
+    READ_FILE_TOOL,
+    edit_file,
+    execute,
+    read_file,
 )
 from src.utils import (
     FileCompleter,
     create_key_bindings,
-    is_read_only_command,
 )
-
-console = Console()
 
 
 class TassApp:
 
     def __init__(self):
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        self.host = os.environ.get("TASS_HOST", "http://localhost:8080")
+        self.llm_client = LLMClient()
         self.key_bindings = create_key_bindings()
         self.file_completer = FileCompleter()
         self.TOOLS_MAP = {
-            "execute": self.execute,
-            "read_file": self.read_file,
-            "edit_file": self.edit_file,
+            "execute": execute,
+            "read_file": read_file,
+            "edit_file": edit_file,
         }
 
-    def _check_llm_host(self):
-        test_url = f"{self.host}/v1/models"
+    def check_llm_host(self):
         try:
-            response = requests.get(test_url, timeout=2)
+            response = self.llm_client.get_models()
             console.print("Terminal Assistant [green](LLM connection ✓)[/green]")
             if response.status_code == 200:
                 return
@@ -48,20 +49,20 @@ class TassApp:
             console.print("Terminal Assistant [red](LLM connection ✗)[/red]")
 
         console.print("\n[red]Could not connect to LLM[/red]")
-        console.print(f"If your LLM isn't running on {self.host}, you can set the [bold]TASS_HOST[/] environment variable to a different URL.")
+        console.print(f"If your LLM isn't running on {self.llm_client.host}, you can set the [bold]TASS_HOST[/] environment variable to a different URL.")
         new_host = console.input(
             "Enter a different URL for this session (or press Enter to keep current): "
         ).strip()
 
         if new_host:
-            self.host = new_host
+            self.llm_client.host = new_host
 
         try:
-            response = requests.get(f"{self.host}/v1/models", timeout=2)
+            response = self.llm_client.get_models()
             if response.status_code == 200:
-                console.print(f"[green]Connection established to {self.host}[/green]")
+                console.print(f"[green]Connection established to {self.llm_client.host}[/green]")
         except Exception:
-            console.print(f"[red]Unable to verify new host {self.host}. Continuing with it anyway.[/red]")
+            console.print(f"[red]Unable to verify new host {self.llm_client.host}. Continuing with it anyway.[/red]")
 
     def summarize(self):
         max_messages = 20
@@ -78,15 +79,13 @@ class TassApp:
         )
 
         console.print("\n - Summarizing conversation...")
-        response = requests.post(
-            f"{self.host}/v1/chat/completions",
-            json={
-                "messages": self.messages + [{"role": "user", "content": prompt}],
-                "tools": TOOLS,  # For caching purposes
-                "chat_template_kwargs": {
-                    "reasoning_effort": "medium",
-                },
-            },
+        response = self.llm_client.get_chat_completions(
+            messages=self.messages + [{"role": "user", "content": prompt}],
+            tools=[
+                EDIT_FILE_TOOL,
+                EXECUTE_TOOL,
+                READ_FILE_TOOL,
+            ],  # For caching purposes
         )
         data = response.json()
         summary = data["choices"][0]["message"]["content"]
@@ -94,16 +93,13 @@ class TassApp:
         console.print("   [green]Summarization completed[/green]")
 
     def call_llm(self) -> bool:
-        response = requests.post(
-            f"{self.host}/v1/chat/completions",
-            json={
-                "messages": self.messages,
-                "tools": TOOLS,
-                "chat_template_kwargs": {
-                    "reasoning_effort": "medium",
-                },
-                "stream": True,
-            },
+        response = self.llm_client.get_chat_completions(
+            messages=self.messages,
+            tools=[
+                EDIT_FILE_TOOL,
+                EXECUTE_TOOL,
+                READ_FILE_TOOL,
+            ],
             stream=True,
         )
 
@@ -223,177 +219,13 @@ class TassApp:
                 )
             return False
         except Exception as e:
-            self.messages.append({"role": "user", "content": str(e)})
+            self.messages.append({"role": "user", "content": f"Tool call failed: {e}"})
+            console.print(f"   [red]Tool call failed: {str(e).strip()}[/red]")
             return self.call_llm()
-
-    def read_file(self, path: str, start: int = 1, num_lines: int = 1000) -> str:
-        if start == 1 and num_lines == 1000:
-            console.print(f" └ Reading file [bold]{path}[/]...")
-        else:
-            last_line = start + num_lines - 1
-            console.print(f" └ Reading file [bold]{path}[/] (lines {start}-{last_line})...")
-
-        try:
-            result = subprocess.run(
-                f"cat -n {path}",
-                shell=True,
-                capture_output=True,
-                text=True,
-            )
-        except Exception as e:
-            console.print("   [red]read_file failed[/red]")
-            console.print(f"   [red]{str(e).strip()}[/red]")
-            return f"read_file failed: {str(e)}"
-
-        out = result.stdout
-        err = result.stderr.strip()
-        if result.returncode != 0:
-            console.print("   [red]read_file failed[/red]")
-            if err:
-                console.print(f"   [red]{err}[/red]")
-            return f"read_file failed: {err}"
-
-        lines = []
-        line_num = 1
-        for line in out.split("\n"):
-            if line_num < start:
-                line_num += 1
-                continue
-
-            lines.append(line)
-            line_num += 1
-
-            if len(lines) >= num_lines:
-                lines.append("... (truncated)")
-                break
-
-        console.print("   [green]Command succeeded[/green]")
-        return "\n".join(lines)
-
-    def edit_file(self, path: str, edits: list[dict]) -> str:
-        for edit in edits:
-            edit["applied"] = False
-
-        def find_edit(n: int) -> dict | None:
-            for edit in edits:
-                if edit["line_start"] <= n <= edit["line_end"]:
-                    return edit
-
-            return None
-
-        file_exists = Path(path).exists()
-        if file_exists:
-            with open(path, "r") as f:
-                original_content = f.read()
-        else:
-            original_content = ""
-
-        final_lines = []
-        original_lines = original_content.split("\n")
-        diff_text = f"{'Editing' if file_exists else 'Creating'} {path}"
-        for i, line in enumerate(original_lines):
-            line_num = i + 1
-            edit = find_edit(line_num)
-            if not edit:
-                final_lines.append(line)
-                continue
-
-            if edit["applied"]:
-                continue
-
-            replace_lines = edit["content"].split("\n")
-            if edit["content"]:
-                final_lines.extend(replace_lines)
-            original_lines = original_content.split("\n")
-            replaced_lines = original_lines[edit["line_start"] - 1:edit["line_end"]]
-
-            prev_line_num = line_num if line_num == 1 else line_num - 1
-            line_before = "" if i == 0 else f" {original_lines[i - 1]}\n"
-            line_after = "" if edit["line_end"] == len(original_lines) else f"\n {original_lines[edit['line_end']]}"
-            replaced_with_minuses = "\n".join([f"-{line}" for line in replaced_lines]) if file_exists else ""
-            replaced_with_pluses = ""
-            if edit["content"]:
-                replaced_with_pluses = "\n" + "\n".join([f"+{line}" for line in edit["content"].split("\n")])
-            diff_text = f"{diff_text}\n\n@@ -{prev_line_num},{len(replaced_lines)} +{prev_line_num},{len(replace_lines)} @@\n{line_before}{replaced_with_minuses}{replaced_with_pluses}{line_after}"
-            edit["applied"] = True
-
-        console.print()
-        console.print(Markdown(f"```diff\n{diff_text}\n```"))
-        answer = console.input("\n[bold]Run?[/] ([bold]Y[/]/n): ").strip().lower()
-        if answer not in ("yes", "y", ""):
-            reason = console.input("Why not? (optional, press Enter to skip): ").strip()
-            return f"User declined: {reason or 'no reason'}"
-
-        console.print(" └ Running...")
-        try:
-            with open(path, "w") as f:
-                f.write("\n".join(final_lines))
-        except Exception as e:
-            console.print("   [red]edit_file failed[/red]")
-            console.print(f"   [red]{str(e).strip()}[/red]")
-            return f"edit_file failed: {str(e).strip()}"
-
-        console.print("   [green]Command succeeded[/green]")
-        return f"Successfully edited {path}"
-
-    def execute(self, command: str, explanation: str) -> str:
-        command = command.strip()
-        requires_confirmation = not is_read_only_command(command)
-        if requires_confirmation:
-            console.print()
-            console.print(Markdown(f"```shell\n{command}\n```"))
-            if explanation:
-                console.print(f"Explanation: {explanation}")
-            answer = console.input("\n[bold]Run?[/] ([bold]Y[/]/n): ").strip().lower()
-            if answer not in ("yes", "y", ""):
-                reason = console.input("Why not? (optional, press Enter to skip): ").strip()
-                return f"User declined: {reason or 'no reason'}"
-
-        if requires_confirmation:
-            console.print(" └ Running...")
-        else:
-            console.print(f" └ Running [bold]{command}[/] (Explanation: {explanation})...")
-
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-            )
-        except Exception as e:
-            console.print("   [red]subprocess.run failed[/red]")
-            console.print(f"   [red]{str(e).strip()}[/red]")
-            return f"subprocess.run failed: {str(e).strip()}"
-
-        out = result.stdout
-        err = result.stderr.strip()
-        if result.returncode == 0:
-            console.print("   [green]Command succeeded[/green]")
-        else:
-            console.print(f"   [red]Command failed[/red] (code {result.returncode})")
-            if err:
-                console.print(f"   [red]{err}[/red]")
-
-        if len(out.split("\n")) > 1000:
-            out_first_1000 = "\n".join(out.split("\n")[:1000])
-            out = f"{out_first_1000}... (Truncated)"
-
-        if len(err.split("\n")) > 1000:
-            err_first_1000 = "\n".join(err.split("\n")[:1000])
-            err = f"{err_first_1000}... (Truncated)"
-
-        if len(out) > 20000:
-            out = f"{out[:20000]}... (Truncated)"
-
-        if len(err) > 20000:
-            err = f"{err[:20000]}... (Truncated)"
-
-        return f"Command output (exit {result.returncode}):\n{out}\n{err}"
 
     def run(self):
         try:
-            self._check_llm_host()
+            self.check_llm_host()
         except KeyboardInterrupt:
             console.print("\nBye!")
             return

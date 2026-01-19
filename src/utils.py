@@ -7,31 +7,7 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 
-from src.constants import (
-    READ_ONLY_COMMANDS,
-    cwd_path,
-)
-
-def is_read_only_command(command: str) -> bool:
-    """A simple check to see if the command is only for reading files.
-
-    Not a comprehensive or foolproof check by any means, and will
-    return false negatives to be safe.
-    """
-    if ">" in command:
-        return False
-
-    # Replace everything that potentially runs another command with a pipe
-    command = command.replace("&&", "|")
-    command = command.replace("||", "|")
-    command = command.replace(";", "|")
-
-    pipes = command.split("|")
-    for pipe in pipes:
-        if pipe.strip().split()[0] not in READ_ONLY_COMMANDS:
-            return False
-
-    return True
+from src.constants import CWD_PATH
 
 
 class FileCompleter(Completer):
@@ -47,13 +23,13 @@ class FileCompleter(Completer):
 
         text_after_at = text[last_at_pos + 1 : cursor_pos]
 
-        base_dir = cwd_path
+        base_dir = CWD_PATH
         search_pattern = text_after_at
         prefix = ""
 
         if "/" in text_after_at:
             dir_part, file_part = text_after_at.rsplit("/", 1)
-            base_dir = cwd_path / dir_part
+            base_dir = CWD_PATH / dir_part
             search_pattern = file_part
             prefix = dir_part + "/"
 
