@@ -1,6 +1,6 @@
 import pytest
 
-from src.utils import is_read_only_command
+from src.tools.execute import is_read_only_command
 
 
 @pytest.mark.parametrize(
