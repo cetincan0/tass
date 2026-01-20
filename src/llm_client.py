@@ -14,7 +14,6 @@ class LLMClient:
         self,
         method: Literal["get", "post"],
         url: str,
-        *args,
         **kwargs,
     ):
         return requests.request(
@@ -23,15 +22,14 @@ class LLMClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
             },
-            *args,
             **kwargs,
         )
 
-    def get(self, url: str, *args, **kwargs):
-        return self.request("get", url, *args, **kwargs)
+    def get(self, url: str, **kwargs):
+        return self.request("get", url, **kwargs)
 
-    def post(self, url: str, *args, **kwargs):
-        return self.request("post", url, *args, **kwargs)
+    def post(self, url: str, **kwargs):
+        return self.request("post", url, **kwargs)
 
     def get_models(self):
         return self.get("/v1/models", timeout=2)

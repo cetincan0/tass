@@ -80,7 +80,7 @@ class TassApp:
 
         console.print("\n - Summarizing conversation...")
         response = self.llm_client.get_chat_completions(
-            messages=self.messages + [{"role": "user", "content": prompt}],
+            messages=[*self.messages, {"role": "user", "content": prompt}],
             tools=[
                 EDIT_FILE_TOOL,
                 EXECUTE_TOOL,
@@ -154,7 +154,7 @@ class TassApp:
                     live.update(generate_layout())
 
                 delta = chunk["choices"][0]["delta"]
-                if not any([delta.get(key) for key in ["content", "reasoning_content", "tool_calls"]]):
+                if not any(delta.get(key) for key in ["content", "reasoning_content", "tool_calls"]):
                     continue
 
                 if delta.get("reasoning_content"):
@@ -263,7 +263,7 @@ class TassApp:
                 try:
                     finished = self.call_llm()
                 except Exception as e:
-                    console.print(f"Failed to call LLM: {str(e)}")
+                    console.print(f"Failed to call LLM: {e}")
                     break
 
                 if finished:

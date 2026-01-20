@@ -6,7 +6,6 @@ from rich.markdown import Markdown
 
 from src.constants import console
 
-
 EDIT_FILE_TOOL = {
     "type": "function",
     "function": {
@@ -80,7 +79,7 @@ def fuzzy_match(edit_find: str, lines: list[str]) -> tuple[int, int] | None:
                 if best_ratio == 1.0:
                     return best_start + 1, best_start + best_window_len
 
-    if best_ratio >= 0.95 and best_start >= 0:
+    if best_ratio >= 0.9:
         return best_start + 1, best_start + best_window_len
 
     return None
@@ -100,7 +99,9 @@ def convert_edit_to_line_edit(edit: dict, original_content: str) -> LineEdit:
 
     # Then try matching without spacing
     for i in range(len(lines)):
-        if [line.strip() for line in lines[i : i + len(edit_lines)]] == [line.strip() for line in edit_lines]:
+        stripped_lines = [line.strip() for line in lines[i : i + len(edit_lines)]]
+        stripped_edit_lines = [line.strip() for line in edit_lines]
+        if stripped_lines == stripped_edit_lines:
             return LineEdit(i + 1, i + len(edit_lines), edit["replace"], False)
 
     # Finally try sequence matching while ignoring whitespace
@@ -121,7 +122,7 @@ def edit_file(path: str, edits: list[dict]) -> str:
 
     file_exists = Path(path).exists()
     if file_exists:
-        with open(path, "r") as f:
+        with open(path) as f:
             original_content = f.read()
     else:
         original_content = ""

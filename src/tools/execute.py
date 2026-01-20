@@ -64,11 +64,7 @@ def is_read_only_command(command: str) -> bool:
     command = command.replace(";", "|")
 
     pipes = command.split("|")
-    for pipe in pipes:
-        if pipe.strip().split()[0] not in READ_ONLY_COMMANDS:
-            return False
-
-    return True
+    return all(pipe.strip().split()[0] in READ_ONLY_COMMANDS for pipe in pipes)
 
 
 def execute(command: str, explanation: str) -> str:

@@ -1,6 +1,5 @@
 from src.constants import console
 
-
 READ_FILE_TOOL = {
     "type": "function",
     "function": {
@@ -59,4 +58,4 @@ def read_file(path: str, start: int = 1, num_lines: int = 1000) -> str:
     except Exception as e:
         console.print("   [red]read_file failed[/red]")
         console.print(f"   [red]{str(e).strip()}[/red]")
-        return f"read_file failed: {str(e)}"
+        return f"read_file failed: {e}"

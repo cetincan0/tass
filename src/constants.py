@@ -2,7 +2,6 @@ from pathlib import Path
 
 from rich.console import Console
 
-
 console = Console()
 CWD_PATH = Path.cwd().resolve()
 

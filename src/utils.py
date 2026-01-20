@@ -1,7 +1,7 @@
 from prompt_toolkit.completion import (
+    CompleteEvent,
     Completer,
     Completion,
-    CompleteEvent,
 )
 from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
