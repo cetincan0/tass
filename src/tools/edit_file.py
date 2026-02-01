@@ -112,7 +112,7 @@ def convert_edit_to_line_edit(edit: dict, original_content: str) -> LineEdit:
     raise Exception("Edit not found in file")
 
 
-def edit_file(path: str, edits: list[dict]) -> str:
+def edit_file(path: str, edits: list[dict], yolo_mode: bool = False) -> str:
     def find_line_edit(n: int) -> LineEdit | None:
         for line_edit in line_edits:
             if line_edit.line_start <= n <= line_edit.line_end:
@@ -161,11 +161,12 @@ def edit_file(path: str, edits: list[dict]) -> str:
 
     console.print()
     console.print(Markdown(f"```diff\n{unified_diff_md}\n```"))
-    answer = console.input("\n[bold]Run?[/] ([bold]Y[/]/n): ").strip().lower()
-    if answer not in ("yes", "y", ""):
-        reason = console.input("Why not? (optional, press Enter to skip): ").strip()
-        return f"User declined: {reason or 'no reason'}"
 
+    if not yolo_mode:
+        answer = console.input("\n[bold]Run?[/] ([bold]Y[/]/n): ").strip().lower()
+        if answer not in ("yes", "y", ""):
+            reason = console.input("Why not? (optional, press Enter to skip): ").strip()
+            return f"User declined: {reason or 'no reason'}"
     console.print(" └ Running...")
     try:
         with open(path, "w") as f:

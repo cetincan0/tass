@@ -67,9 +67,9 @@ def is_read_only_command(command: str) -> bool:
     return all(pipe.strip().split()[0] in READ_ONLY_COMMANDS for pipe in pipes)
 
 
-def execute(command: str, explanation: str) -> str:
+def execute(command: str, explanation: str, yolo_mode: bool = False) -> str:
     command = command.strip()
-    requires_confirmation = not is_read_only_command(command)
+    requires_confirmation = not yolo_mode and not is_read_only_command(command)
     if requires_confirmation:
         console.print()
         console.print(Markdown(f"```shell\n{command}\n```"))
@@ -79,11 +79,9 @@ def execute(command: str, explanation: str) -> str:
         if answer not in ("yes", "y", ""):
             reason = console.input("Why not? (optional, press Enter to skip): ").strip()
             return f"User declined: {reason or 'no reason'}"
-
-    if requires_confirmation:
         console.print(" └ Running...")
     else:
-        console.print(f" └ Running [bold]{command}[/] (Explanation: {explanation})...")
+        console.print(f" └ Running [bold]{command}[/] (Explanation: {explanation})")
 
     try:
         result = subprocess.run(

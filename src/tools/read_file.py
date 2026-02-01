@@ -30,7 +30,7 @@ READ_FILE_TOOL = {
 }
 
 
-def read_file(path: str, start: int = 1, num_lines: int = 1000) -> str:
+def read_file(path: str, start: int = 1, num_lines: int = 1000, yolo_mode: bool = False) -> str:
     if start == 1 and num_lines == 1000:
         console.print(f" └ Reading file [bold]{path}[/]...")
     else:

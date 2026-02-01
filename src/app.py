@@ -28,7 +28,8 @@ from src.utils import (
 
 class TassApp:
 
-    def __init__(self):
+    def __init__(self, yolo_mode: bool = False):
+        self.yolo_mode = yolo_mode
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.llm_client = LLMClient()
         self.key_bindings = create_key_bindings()
@@ -208,6 +209,7 @@ class TassApp:
             for tool_call in tool_calls_map.values():
                 tool = self.TOOLS_MAP[tool_call["function"]["name"]]
                 tool_args = json.loads(tool_call["function"]["arguments"])
+                tool_args["yolo_mode"] = self.yolo_mode
                 result = tool(**tool_args)
                 self.messages.append(
                     {
@@ -223,7 +225,19 @@ class TassApp:
             console.print(f"   [red]Tool call failed: {str(e).strip()}[/red]")
             return self.call_llm()
 
-    def run(self):
+    def run(self, initial_input: str | None = None):
+        if initial_input:
+            self.messages.append({"role": "user", "content": initial_input})
+            while True:
+                try:
+                    finished = self.call_llm()
+                except Exception as e:
+                    console.print(f"Failed to call LLM: {e}")
+                    break
+
+                if finished:
+                    return
+
         try:
             self.check_llm_host()
         except KeyboardInterrupt:
@@ -258,7 +272,6 @@ class TassApp:
                 break
 
             self.messages.append({"role": "user", "content": user_input})
-
             while True:
                 try:
                     finished = self.call_llm()
