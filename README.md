@@ -30,6 +30,12 @@ You can run it with
 tass
 ```
 
+or if you only want to ask/request a single thing
+
+```
+tass "convert video.mp4 to audio.mp3"
+```
+
 tass has only been tested with llama.cpp with LLMs such as gpt-oss-120b and MiniMax M2.1, but any LLM with tool calling capabilities should work.
 
 By default, tass will try connecting to http://localhost:8080. To use another host, set the `TASS_HOST` environment variable. If your server requires an API key, you can set the `TASS_API_KEY` environment variable. At the moment there's no support for connecting tass to a non-local API, nor are there plans for it. I plan on keeping tass completely local. There's no telemetry, no logs, just a simple REPL loop.
@@ -37,6 +43,8 @@ By default, tass will try connecting to http://localhost:8080. To use another ho
 Once it's running, you can ask questions or give commands like "Create an empty file called test.txt" and it will propose a command to run after user confirmation.
 
 You can enter multiline input by ending lines with a backslash (\\). The continuation prompt will keep appearing until you enter a line without a trailing backslash.
+
+You can use the --yolo flag to turn off user confirmations for executing commands and editing files, but I would only recommend using this if you're benchmarking tass with an LLM and highly recommend not using it outside of testing/benchmarking scenarios.
 
 ## Upgrade
 
