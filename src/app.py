@@ -34,6 +34,7 @@ class TassApp:
         self.llm_client = LLMClient()
         self.key_bindings = create_key_bindings()
         self.file_completer = FileCompleter()
+        self.context_tokens = 0
         self.TOOLS_MAP = {
             "execute": execute,
             "read_file": read_file,
@@ -66,8 +67,7 @@ class TassApp:
             console.print(f"[red]Unable to verify new host {self.llm_client.host}. Continuing with it anyway.[/red]")
 
     def summarize(self):
-        max_messages = 20
-        if len(self.messages) <= max_messages:
+        if self.context_tokens < 30_000 and len(self.messages) <= 50:
             return
 
         prompt = (
@@ -144,11 +144,13 @@ class TassApp:
                     continue
 
                 chunk = json.loads(line.removeprefix("data:"))
-                if all(k in chunk.get("timings", {}) for k in ["prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second"]):
+                if all(k in chunk.get("timings", {}) for k in ["cache_n", "prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second"]):
                     timings = chunk["timings"]
+                    self.context_tokens = timings["cache_n"] + timings["prompt_n"] + timings["predicted_n"]
                     timings_str = (
                         f"Input: {timings['prompt_n']:,} tokens, {timings['prompt_per_second']:,.2f} tok/s | "
-                        f"Output: {timings['predicted_n']:,} tokens, {timings['predicted_per_second']:,.2f} tok/s"
+                        f"Output: {timings['predicted_n']:,} tokens, {timings['predicted_per_second']:,.2f} tok/s | "
+                        f"Context: {self.context_tokens:,} tokens"
                     )
 
                 if chunk["choices"][0]["finish_reason"]:

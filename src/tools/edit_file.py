@@ -10,7 +10,7 @@ EDIT_FILE_TOOL = {
     "type": "function",
     "function": {
         "name": "edit_file",
-        "description": "Edits (or creates) a file. Can make multiple edits in one call. Each edit finds the instance of 'find' and replaces it with 'replace'. When creating a file, only return a single edit where 'find' is empty and 'replace' is the entire contents of the file. Both 'find' and 'replace' must always be entire lines and never parts of a line, and they must always have correct dnd complete indentation. You must use the read_file tool before editing a file.",
+        "description": "Edits (or creates) a file. Each edit must specify **whole lines**, including any leading spaces or tabs, as the `find` string; the tool does **not** perform in‑line substring replacements. It searches for a contiguous block of lines that exactly matches the provided `find` text (including newline characters). If a matching block is found, those lines are removed and replaced by the `replace` string, which also must contain the complete lines with correct indentation. To modify part of a line, include the entire original line in `find` and provide the fully updated line in `replace`. If you want to create a file or replace the entire contents of an existing file, only return a single edit where 'find' is empty and 'replace' is the new entire contents of the file. You must use the read_file tool before editing a file.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -90,6 +90,9 @@ def convert_edit_to_line_edit(edit: dict, original_content: str) -> LineEdit:
         return LineEdit(1, 1, edit["replace"], False)
 
     lines = original_content.split("\n")
+    if not edit["find"]:
+        return LineEdit(1, len(lines), edit["replace"], False)
+
     edit_lines = edit["find"].split("\n")
 
     # First try exact matches
