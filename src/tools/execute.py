@@ -1,4 +1,5 @@
 import subprocess
+from time import time
 
 from rich.markdown import Markdown
 
@@ -71,7 +72,6 @@ def execute(command: str, explanation: str, yolo_mode: bool = False) -> str:
     command = command.strip()
     requires_confirmation = not yolo_mode and not is_read_only_command(command)
     if requires_confirmation:
-        console.print()
         console.print(Markdown(f"```shell\n{command}\n```"))
         if explanation:
             console.print(f"Explanation: {explanation}")
@@ -84,12 +84,14 @@ def execute(command: str, explanation: str, yolo_mode: bool = False) -> str:
         console.print(f" └ Running [bold]{command}[/] (Explanation: {explanation})")
 
     try:
+        start = time()
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
         )
+        took = time() - start
     except Exception as e:
         console.print("   [red]subprocess.run failed[/red]")
         console.print(f"   [red]{str(e).strip()}[/red]")
@@ -98,9 +100,9 @@ def execute(command: str, explanation: str, yolo_mode: bool = False) -> str:
     out = result.stdout
     err = result.stderr.strip()
     if result.returncode == 0:
-        console.print("   [green]Command succeeded[/green]")
+        console.print(f"   [green]Command succeeded[/green] [grey50]({took:,.2f}s)[/grey50]", highlight=False)
     else:
-        console.print(f"   [red]Command failed[/red] (code {result.returncode})")
+        console.print(f"   [red]Command failed[/red] (code {result.returncode}) [grey50]({took:,.2f}s)[/grey50]", highlight=False)
         if err:
             console.print(f"   [red]{err}[/red]")
 
@@ -118,4 +120,4 @@ def execute(command: str, explanation: str, yolo_mode: bool = False) -> str:
     if len(err) > 20000:
         err = f"{err[:20000]}... (Truncated)"
 
-    return f"Command output (exit {result.returncode}):\n{out}\n{err}"
+    return f"Command output (exit {result.returncode}):\n{out}\n{err}\nTook {took:,.2f}s"
