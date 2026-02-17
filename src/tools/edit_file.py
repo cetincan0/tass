@@ -71,7 +71,7 @@ def fuzzy_match(edit_find: str, lines: list[str]) -> tuple[int, int] | None:
     for i in range(len(lines)):
         for j in range(1, min(num_edit_find_lines * 2, len(lines) - i)):
             window_text = remove_empty_lines("\n".join(lines[i : i + j]))
-            ratio = SequenceMatcher(None, edit_find_trimmed, window_text).ratio()
+            ratio = SequenceMatcher(None, edit_find_trimmed, window_text, autojunk=False).ratio()
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_start = i

@@ -131,6 +131,8 @@ class TassApp:
             if content:
                 groups.append(Text(""))
                 groups.append(Markdown(content.rstrip()))
+                if not reasoning_content and timings_str:
+                    groups.append(Text(timings_str, style="grey50"))
 
             return Group(*groups)
 
