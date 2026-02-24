@@ -65,12 +65,22 @@ def fuzzy_match(edit_find: str, lines: list[str]) -> tuple[int, int] | None:
 
     num_edit_find_lines = len(edit_find.split("\n"))
     edit_find_trimmed = remove_empty_lines(edit_find)
+    first_edit_find_line = edit_find_trimmed.split("\n")[0].strip()
+    edit_find_without_spaces_len = len("".join(edit_find_trimmed.split()))
     best_ratio = 0.0
     best_start = -1
     best_window_len = 1
     for i in range(len(lines)):
-        for j in range(1, min(num_edit_find_lines * 2, len(lines) - i)):
+        if lines[i].strip() != first_edit_find_line:
+            continue
+
+        for j in range(1, min(num_edit_find_lines * 2 + 1, len(lines) - i)):
             window_text = remove_empty_lines("\n".join(lines[i : i + j]))
+            window_text_without_spaces_len = len("".join(window_text.split()))
+
+            if abs(edit_find_without_spaces_len - window_text_without_spaces_len) / (edit_find_without_spaces_len or 1) > 0.05:
+                continue
+
             ratio = SequenceMatcher(None, edit_find_trimmed, window_text, autojunk=False).ratio()
             if ratio > best_ratio:
                 best_ratio = ratio
