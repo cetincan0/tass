@@ -46,7 +46,7 @@ def read_file(path: str, start: int = 1, num_lines: int = 1000, yolo_mode: bool 
                     line_num += 1
                     continue
 
-                lines.append(line)
+                lines.append(line.rstrip("\n"))
                 line_num += 1
 
                 if len(lines) >= num_lines:
