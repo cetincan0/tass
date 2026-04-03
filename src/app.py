@@ -67,7 +67,7 @@ class TassApp:
             console.print(f"[red]Unable to verify new host {self.llm_client.host}. Continuing with it anyway.[/red]")
 
     def summarize(self):
-        if self.context_tokens < 30_000 and len(self.messages) <= 50:
+        if self.context_tokens < 150_000:
             return
 
         prompt = (
@@ -159,11 +159,15 @@ class TassApp:
                     live.update(generate_layout())
 
                 delta = chunk["choices"][0]["delta"]
-                if not any(delta.get(key) for key in ["content", "reasoning_content", "tool_calls"]):
+                if not any(delta.get(key) for key in ["content", "reasoning_content", "reasoning", "tool_calls"]):
                     continue
 
                 if delta.get("reasoning_content"):
                     reasoning_content += delta["reasoning_content"]
+                    live.update(generate_layout())
+
+                if delta.get("reasoning"):
+                    reasoning_content += delta["reasoning"]
                     live.update(generate_layout())
 
                 if delta.get("content"):
