@@ -181,7 +181,7 @@ class TassApp:
                             {
                                 "index": index,
                                 "id": "",
-                                "type": "",
+                                "type": "function",
                                 "function": {
                                     "name": "",
                                     "arguments": "",
@@ -193,7 +193,10 @@ class TassApp:
                     if tool_call_delta.get("id"):
                         tool_call["id"] += tool_call_delta["id"]
                     if tool_call_delta.get("type"):
-                        tool_call["type"] += tool_call_delta["type"]
+                        # Don't append tool call type and hardcode it to function
+                        # to increase inference engine compatibility
+                        # tool_call["type"] += tool_call_delta["type"]
+                        pass
                     if tool_call_delta.get("function"):
                         function = tool_call_delta["function"]
                         if function.get("name"):
