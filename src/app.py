@@ -146,6 +146,9 @@ class TassApp:
                     continue
 
                 chunk = json.loads(line.removeprefix("data:"))
+                if "choices" not in chunk:
+                    continue
+
                 if all(k in chunk.get("timings", {}) for k in ["cache_n", "prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second"]):
                     timings = chunk["timings"]
                     self.context_tokens = timings["cache_n"] + timings["prompt_n"] + timings["predicted_n"]
