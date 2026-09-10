@@ -1,4 +1,6 @@
 import json
+import uuid
+from datetime import datetime
 
 from prompt_toolkit import prompt
 from rich.console import Group
@@ -8,9 +10,11 @@ from rich.panel import Panel
 from rich.text import Text
 
 from src.constants import (
+    CWD_PATH,
     SYSTEM_PROMPT,
     console,
 )
+from src.conversation import ConversationManager
 from src.llm_client import LLMClient
 from src.tools import (
     EDIT_FILE_TOOL,
@@ -26,6 +30,18 @@ from src.utils import (
 )
 
 
+def _parse_json(raw: str, source: str) -> dict:
+    """json.loads with a clearer error that also prints the offending string."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        console.print(f"[red]JSON parse error in {source}: {e}[/red]")
+        console.print(f"[red]--- raw {source} ---[/red]")
+        console.print(raw)
+        console.print(f"[red]--- end raw {source} ---[/red]")
+        raise
+
+
 class TassApp:
 
     def __init__(self, yolo_mode: bool = False):
@@ -35,11 +51,89 @@ class TassApp:
         self.key_bindings = create_key_bindings()
         self.file_completer = FileCompleter()
         self.context_tokens = 0
+        self.conversation_manager = ConversationManager()
+        self.conversation_id: str | None = None
         self.TOOLS_MAP = {
             "execute": execute,
             "read_file": read_file,
             "edit_file": edit_file,
         }
+
+    def _display_history(self, messages: list[dict] | None = None):
+        messages = messages if messages is not None else self.messages
+        non_system = [m for m in messages if m["role"] != "system"]
+
+        if not non_system:
+            console.print("[dim]No previous messages.[/dim]")
+            return
+        console.print(f"[dim]Resuming conversation ({len(non_system)} messages)[/dim]")
+        for msg in non_system:
+            try:
+                if msg["role"] == "user":
+                    console.print(f"\n[bold blue]You:[/bold blue] {msg['content']}")
+                elif msg["role"] == "assistant":
+                    content = msg.get("content", "").strip()
+                    if content:
+                        console.print("[bold green]Assistant:[/bold green]")
+                        console.print(Markdown(content))
+                    for tc in msg.get("tool_calls", []):
+                        console.print(f"[grey50][tool call: {tc['function']['name']}][/grey50]")
+                elif msg["role"] == "tool":
+                    console.print(f"[grey50][tool result: {msg['name']}][/grey50] {msg['content'][:200]}")
+            except Exception:
+                console.print(f"[red]Error displaying message: {msg}[/red]")
+        console.print()
+
+    def _save_conversation(self):
+        if self.conversation_id is None:
+            self.conversation_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        self.conversation_manager.save(
+            self.conversation_id,
+            self.messages,
+            str(CWD_PATH),
+        )
+
+    def _graceful_exit(self):
+        console.print("\nBye!")
+        self._save_conversation()
+        if self.conversation_id:
+            console.print(f"[dim]tass --resume {self.conversation_id} to continue[/dim]")
+
+    def _with_current_system(self, messages: list[dict]) -> list[dict]:
+        """Drop any stored system message so CWD/git/dir context reflects "now" ."""
+        return [{"role": "system", "content": SYSTEM_PROMPT},
+                *(m for m in messages if m["role"] != "system")]
+
+    def _select_conversation(self) -> list[dict]:
+        conversations = self.conversation_manager.list_conversations()
+
+        if not conversations:
+            console.print("[dim]No saved conversations found. Starting fresh.[/dim]")
+            return [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        console.print()
+        console.print("[bold]Saved conversations:[/bold]")
+        for i, c in enumerate(conversations, 1):
+            updated = c["updated_at"][:19].replace("T", " ")
+            preview = c["preview"]
+            console.print(f"  {i}. [cyan]{c['id']}[/cyan]  {updated}  ({c['message_count']} msgs)  {preview}")
+        console.print()
+
+        while True:
+            choice = console.input("Select a conversation (number, or press Enter for new): ").strip()
+            if not choice:
+                return [{"role": "system", "content": SYSTEM_PROMPT}]
+            if choice.isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(conversations):
+                    cid = conversations[idx]["id"]
+                    msgs = self.conversation_manager.load(cid)
+                    if msgs is not None:
+                        self.conversation_id = cid
+                        msgs = self._with_current_system(msgs)
+                        self._display_history(msgs)
+                        return msgs
+            console.print("[red]Invalid choice.[/red]")
 
     def check_llm_host(self):
         try:
@@ -88,8 +182,16 @@ class TassApp:
                 READ_FILE_TOOL,
             ],  # For caching purposes
         )
-        data = response.json()
+        try:
+            data = response.json()
+        except json.JSONDecodeError as e:
+            console.print(f"[red]Failed to parse summarization response as JSON: {e}[/red]")
+            console.print("[red]--- raw response ---[/red]")
+            console.print(response.text)
+            console.print("[red]--- end raw response ---[/red]")
+            raise
         summary = data["choices"][0]["message"]["content"]
+
         self.messages = [self.messages[0], {"role": "assistant", "content": f"Summary of the conversation so far:\n{summary}"}]
         console.print("   [green]Summarization completed[/green]")
 
@@ -145,7 +247,8 @@ class TassApp:
                 if line == "data: [DONE]":
                     continue
 
-                chunk = json.loads(line.removeprefix("data:"))
+                chunk = _parse_json(line.removeprefix("data:"), "stream chunk")
+
                 if "choices" not in chunk:
                     continue
 
@@ -222,8 +325,12 @@ class TassApp:
         try:
             for tool_call in tool_calls_map.values():
                 tool = self.TOOLS_MAP[tool_call["function"]["name"]]
-                tool_args = json.loads(tool_call["function"]["arguments"])
+                tool_args = _parse_json(
+                    tool_call["function"]["arguments"],
+                    f"tool arguments for {tool_call['function']['name']}",
+                )
                 tool_args["yolo_mode"] = self.yolo_mode
+
                 result = tool(**tool_args)
                 self.messages.append(
                     {
@@ -239,7 +346,19 @@ class TassApp:
             console.print(f"   [red]Tool call failed: {str(e).strip()}[/red]")
             return self.call_llm()
 
-    def run(self, initial_input: str | None = None):
+    def run(self, initial_input: str | None = None, conversation_id: str | None = None, resume_picker: bool = False):
+        if resume_picker:
+            self.messages = self._select_conversation()
+        elif conversation_id:
+            loaded = self.conversation_manager.load(conversation_id)
+            if loaded is not None:
+                self.messages = self._with_current_system(loaded)
+                self.conversation_id = conversation_id
+                self._display_history()
+            else:
+                console.print(f"[red]Conversation '{conversation_id}' not found.[/red]")
+                self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
         if initial_input:
             self.messages.append({"role": "user", "content": initial_input})
             while True:
@@ -247,15 +366,17 @@ class TassApp:
                     finished = self.call_llm()
                 except Exception as e:
                     console.print(f"Failed to call LLM: {e}")
+                    self._save_conversation()
                     break
 
                 if finished:
+                    self._save_conversation()
                     return
 
         try:
             self.check_llm_host()
         except KeyboardInterrupt:
-            console.print("\nBye!")
+            self._graceful_exit()
             return
 
         while True:
@@ -275,14 +396,14 @@ class TassApp:
                     input_lines.append(input_line[:-1])
                 user_input = "\n".join(input_lines)
             except KeyboardInterrupt:
-                console.print("\nBye!")
+                self._graceful_exit()
                 break
 
             if not user_input:
                 continue
 
             if user_input.lower().strip() == "exit":
-                console.print("\nBye!")
+                self._graceful_exit()
                 break
 
             self.messages.append({"role": "user", "content": user_input})
@@ -291,8 +412,10 @@ class TassApp:
                     finished = self.call_llm()
                 except Exception as e:
                     console.print(f"Failed to call LLM: {e}")
+                    self._save_conversation()
                     break
 
                 if finished:
                     self.summarize()
+                    self._save_conversation()
                     break

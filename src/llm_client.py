@@ -46,4 +46,5 @@ class LLMClient:
                 },
             },
             stream=stream,
+            timeout=(10, 600),
         )
