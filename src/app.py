@@ -1,4 +1,5 @@
 import json
+import sys
 import uuid
 from datetime import datetime
 
@@ -35,10 +36,10 @@ def _parse_json(raw: str, source: str) -> dict:
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        console.print(f"[red]JSON parse error in {source}: {e}[/red]")
-        console.print(f"[red]--- raw {source} ---[/red]")
-        console.print(raw)
-        console.print(f"[red]--- end raw {source} ---[/red]")
+        console.print(f"[red]JSON parse error in {source}: {e}[/red]", file=sys.stderr)
+        console.print(f"[red]--- raw {source} ---[/red]", file=sys.stderr)
+        console.print(raw, file=sys.stderr)
+        console.print(f"[red]--- end raw {source} ---[/red]", file=sys.stderr)
         raise
 
 
@@ -240,14 +241,17 @@ class TassApp:
 
         with Live(generate_layout(), refresh_per_second=10) as live:
             for line in response.iter_lines():
-                line = line.decode("utf-8")
-                if not line.strip():
+                line = line.decode("utf-8").strip()
+                if not line:
+                    continue
+
+                if line.startswith(":"):
                     continue
 
                 if line == "data: [DONE]":
                     continue
 
-                chunk = _parse_json(line.removeprefix("data:"), "stream chunk")
+                chunk = _parse_json(line.removeprefix("data:").lstrip(), "stream chunk")
 
                 if "choices" not in chunk:
                     continue
