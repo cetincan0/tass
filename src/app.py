@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 import uuid
 from datetime import datetime
 
@@ -197,6 +198,7 @@ class TassApp:
         console.print("   [green]Summarization completed[/green]")
 
     def call_llm(self) -> bool:
+        t_start = time.perf_counter()
         response = self.llm_client.get_chat_completions(
             messages=self.messages,
             tools=[
@@ -211,6 +213,8 @@ class TassApp:
         reasoning_content = ""
         tool_calls_map = {}
         timings_str = ""
+        t_first_token: float | None = None
+        usage: dict | None = None
 
         def generate_layout():
             groups = []
@@ -253,7 +257,10 @@ class TassApp:
 
                 chunk = _parse_json(line.removeprefix("data:").lstrip(), "stream chunk")
 
-                if "choices" not in chunk:
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+
+                if not chunk.get("choices"):
                     continue
 
                 if all(k in chunk.get("timings", {}) for k in ["cache_n", "prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second"]):
@@ -273,18 +280,26 @@ class TassApp:
                     continue
 
                 if delta.get("reasoning_content"):
+                    if t_first_token is None:
+                        t_first_token = time.perf_counter()
                     reasoning_content += delta["reasoning_content"]
                     live.update(generate_layout())
 
                 if delta.get("reasoning"):
+                    if t_first_token is None:
+                        t_first_token = time.perf_counter()
                     reasoning_content += delta["reasoning"]
                     live.update(generate_layout())
 
                 if delta.get("content"):
+                    if t_first_token is None:
+                        t_first_token = time.perf_counter()
                     content += delta["content"]
                     live.update(generate_layout())
 
                 for tool_call_delta in delta.get("tool_calls") or []:
+                    if t_first_token is None:
+                        t_first_token = time.perf_counter()
                     index = tool_call_delta["index"]
                     if index not in tool_calls_map:
                         tool_calls_map[index] = (
@@ -313,6 +328,26 @@ class TassApp:
                             tool_call["function"]["name"] += function["name"]
                         if function.get("arguments"):
                             tool_call["function"]["arguments"] += function["arguments"]
+
+            # Fallback: if server didn't provide timings (e.g. vLLM), calculate from
+            # measured wall-clock time + usage token counts from stream_options.
+            if not timings_str and usage:
+                t_end = time.perf_counter()
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                self.context_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+
+                if t_first_token is not None and prompt_tokens > 0:
+                    ttft = t_first_token - t_start
+                    prompt_speed = prompt_tokens / ttft
+                    decode_time = t_end - t_first_token
+                    gen_speed = (completion_tokens - 1) / decode_time if decode_time > 0 and completion_tokens > 1 else 0.0
+                    timings_str = (
+                        f"Input: {prompt_tokens:,} tokens, {prompt_speed:,.2f} tok/s | "
+                        f"Output: {completion_tokens:,} tokens, {gen_speed:,.2f} tok/s | "
+                        f"Context: {self.context_tokens:,} tokens"
+                    )
+                    live.update(generate_layout())
 
         self.messages.append(
             {

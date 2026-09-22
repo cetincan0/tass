@@ -35,16 +35,19 @@ class LLMClient:
         return self.get("/v1/models", timeout=2)
 
     def get_chat_completions(self, messages: list[dict], tools: list[dict], stream: bool = False):
+        payload = {
+            "messages": messages,
+            "tools": tools,
+            "stream": stream,
+            "chat_template_kwargs": {
+                "reasoning_effort": "medium",
+            },
+        }
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
         return self.post(
             "/v1/chat/completions",
-            json={
-                "messages": messages,
-                "tools": tools,
-                "stream": stream,
-                "chat_template_kwargs": {
-                    "reasoning_effort": "medium",
-                },
-            },
+            json=payload,
             stream=stream,
             timeout=(10, 600),
         )
